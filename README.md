@@ -19,14 +19,14 @@ Pattern Recognition. "FedNN: Federated learning on concept drift data using weig
         --model_name LeNet \
         --result_path results
 
-## Data
+# Data
 Please download the pre-processed digit datasets here [FedBN](https://github.com/med-air/FedBN) and put it in the ./data directory.
 
-## Requirements
+# Requirements
 
     pip install torch torchvision
 
-## Citation
+# Citation
 If you find this repository useful in your research, please cite:
 ```
 @article{kang2023fednn,
