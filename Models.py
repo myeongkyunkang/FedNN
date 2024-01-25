@@ -1,9 +1,20 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torchvision.models as models
+from torch.nn import functional as F
 
-import ws_resnet
+
+class Conv2d(nn.Conv2d):
+
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
+        super(Conv2d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+
+    def forward(self, x):
+        weight = self.weight
+        weight_mean = weight.mean(dim=1, keepdim=True).mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
+        weight = weight - weight_mean
+        std = weight.view(weight.size(0), -1).std(dim=1).view(-1, 1, 1, 1) + 1e-5
+        weight = weight / std.expand_as(weight)
+        return F.conv2d(x, weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
 
 class AGN(nn.Module):
@@ -92,52 +103,18 @@ class AGN(nn.Module):
         return self.select_weight_
 
 
-def convert_resnet18_bn_to_gn(resnet18):
-    # Change BN to GN
-    resnet18.bn1 = nn.GroupNorm(num_groups=2, num_channels=64)
-
-    resnet18.layer1[0].bn1 = nn.GroupNorm(num_groups=2, num_channels=64)
-    resnet18.layer1[0].bn2 = nn.GroupNorm(num_groups=2, num_channels=64)
-    resnet18.layer1[1].bn1 = nn.GroupNorm(num_groups=2, num_channels=64)
-    resnet18.layer1[1].bn2 = nn.GroupNorm(num_groups=2, num_channels=64)
-
-    resnet18.layer2[0].bn1 = nn.GroupNorm(num_groups=2, num_channels=128)
-    resnet18.layer2[0].bn2 = nn.GroupNorm(num_groups=2, num_channels=128)
-    resnet18.layer2[0].downsample[1] = nn.GroupNorm(num_groups=2, num_channels=128)
-    resnet18.layer2[1].bn1 = nn.GroupNorm(num_groups=2, num_channels=128)
-    resnet18.layer2[1].bn2 = nn.GroupNorm(num_groups=2, num_channels=128)
-
-    resnet18.layer3[0].bn1 = nn.GroupNorm(num_groups=2, num_channels=256)
-    resnet18.layer3[0].bn2 = nn.GroupNorm(num_groups=2, num_channels=256)
-    resnet18.layer3[0].downsample[1] = nn.GroupNorm(num_groups=2, num_channels=256)
-    resnet18.layer3[1].bn1 = nn.GroupNorm(num_groups=2, num_channels=256)
-    resnet18.layer3[1].bn2 = nn.GroupNorm(num_groups=2, num_channels=256)
-
-    resnet18.layer4[0].bn1 = nn.GroupNorm(num_groups=2, num_channels=512)
-    resnet18.layer4[0].bn2 = nn.GroupNorm(num_groups=2, num_channels=512)
-    resnet18.layer4[0].downsample[1] = nn.GroupNorm(num_groups=2, num_channels=512)
-    resnet18.layer4[1].bn1 = nn.GroupNorm(num_groups=2, num_channels=512)
-    resnet18.layer4[1].bn2 = nn.GroupNorm(num_groups=2, num_channels=512)
-
-    assert len(dict(resnet18.named_parameters()).keys()) == len(resnet18.state_dict().keys()), 'More BN layers are there...'
-
-    return resnet18
-
-
 class client_model(nn.Module):
-    def __init__(self, name, num_clients=None, pretrained=False):
+    def __init__(self, name):
         super(client_model, self).__init__()
         self.name = name
-        self.num_clients = num_clients
 
         if 'LeNet' in self.name:
-            self.n_cls = 10
             self.conv1 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=5)
             self.conv2 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=5)
             self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
             self.fc1 = nn.Linear(64 * 5 * 5, 384)
             self.fc2 = nn.Linear(384, 192)
-            self.fc3 = nn.Linear(192, self.n_cls)
+            self.fc3 = nn.Linear(192, 10)
 
             if self.name.endswith('_bn'):
                 self.bn1 = nn.BatchNorm2d(64)
@@ -148,33 +125,13 @@ class client_model(nn.Module):
                 self.bn2 = nn.GroupNorm(num_groups=2, num_channels=64)
 
             elif self.name.endswith('_fednn'):
-                self.conv1 = ws_resnet.Conv2d(in_channels=3, out_channels=64, kernel_size=5)
-                self.conv2 = ws_resnet.Conv2d(in_channels=64, out_channels=64, kernel_size=5)
+                self.conv1 = Conv2d(in_channels=3, out_channels=64, kernel_size=5)
+                self.conv2 = Conv2d(in_channels=64, out_channels=64, kernel_size=5)
                 self.bn1 = AGN(num_groups=2, num_channels=64)
                 self.bn2 = AGN(num_groups=2, num_channels=64)
 
-        elif 'ResNet18' in self.name:
-            if self.name.endswith('_bn'):
-                self.model = models.resnet18()
-
-            elif self.name.endswith('_fednn'):
-                def _Norm(num_features):
-                    return AGN(num_groups=2, num_channels=num_features)
-
-                self.model = ws_resnet.l_resnet18(norm_layer=_Norm)
-
-            else:
-                # gn as default
-                self.model = convert_resnet18_bn_to_gn(models.resnet18())
-
-            if pretrained:
-                state_dict = models.resnet.load_state_dict_from_url('https://download.pytorch.org/models/resnet18-f37072fd.pth')
-                model_state_dict = self.model.state_dict()
-                for k in model_state_dict:
-                    if k in model_state_dict and k in state_dict:
-                        if model_state_dict[k].shape != state_dict[k].shape:
-                            del state_dict[k]
-                self.model.load_state_dict(state_dict, strict=False)
+        else:
+            raise ValueError()
 
     def forward(self, x):
         if 'LeNet' in self.name:
@@ -190,8 +147,5 @@ class client_model(nn.Module):
             x = F.relu(self.fc1(x))
             x = F.relu(self.fc2(x))
             x = self.fc3(x)
-
-        elif 'ResNet18' in self.name:
-            x = self.model(x)
 
         return x

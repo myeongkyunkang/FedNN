@@ -20,7 +20,7 @@ def main(args):
     data_obj = DatasetObject(dataset=args.dataset_name, n_client=args.n_client, seed=args.data_seed, result_path=args.result_path, data_dir=args.data_dir)
 
     # Get model
-    model_func = lambda: client_model(args.model_name, num_clients=args.n_client, pretrained=args.pretrained)
+    model_func = lambda: client_model(args.model_name)
 
     # Initialize the model for all methods with a random seed or load it from a saved initial model
     if args.seed is not None:
@@ -55,7 +55,7 @@ if __name__ == '__main__':
     parser.add_argument('--result_path', default='./results/')
     parser.add_argument('--data_dir', default='./data')
     parser.add_argument('--method', default='fedavg', help='fedavg')
-    parser.add_argument('--model_name', default='LeNet', help='LeNet, ResNet18')
+    parser.add_argument('--model_name', default='LeNet', help='LeNet')
     parser.add_argument('--dataset_name', default='DIGIT', help='DIGIT')
     parser.add_argument('--data_seed', default=23, type=int)
     parser.add_argument('--seed', default=23, type=int)
@@ -70,7 +70,6 @@ if __name__ == '__main__':
     parser.add_argument('--sch_step', default=1, type=int)
     parser.add_argument('--sch_gamma', default=1, type=int)
     parser.add_argument('--act_prob', default=0.4, type=float)
-    parser.add_argument('--pretrained', action='store_true')
     parser.add_argument('--tau', default=5.0, type=float)
     args = parser.parse_args()
 
